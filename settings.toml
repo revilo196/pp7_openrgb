@@ -1,0 +1,7 @@
+Host = "192.168.105.131"
+Port = 50001
+LedColors = true
+LedOn = 255
+LedDim = 12
+BindingFile = "PP7_Bindings.csv"
+UpdateFrequency = 25

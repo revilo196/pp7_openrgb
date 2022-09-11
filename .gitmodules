@@ -1,0 +1,3 @@
+[submodule "src/ProPresenter7-Proto"]
+	path = src/ProPresenter7-Proto
+	url = git@github.com:greyshirtguy/ProPresenter7-Proto.git

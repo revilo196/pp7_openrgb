@@ -1,0 +1,21 @@
+bind,key,num
+Verse,A,68
+Verse 1,A,68
+Verse 2,S,69
+Verse 3,D,70
+Verse 4,F,71
+Verse 5,G,72
+Verse 6,H,73
+Chorus,C,93
+Chorus 1,C,93
+Chorus 2,X,94
+Chorus 3,Z,51
+Bridge,B,95
+Bridge 1,B,95
+Bridge 2,N,96
+Bridge 3,M,97
+PreChorus,P,55
+Tag,T,50
+Intro,I,53
+Ending,E,48
+Outro,O,54
