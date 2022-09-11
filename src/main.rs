@@ -9,6 +9,8 @@ use std::fs::File;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time;
+use tokio_retry::strategy::FixedInterval;
+use tokio_retry::Retry;
 
 /// Read the HotKey Mapping of PP7 from predefined file
 /// - the file need to be in the run folder
@@ -29,9 +31,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let settings: Config = Config::builder()
         .add_source(config::File::with_name("settings"))
         .build()?;
+
     // connect to local server OpenRGB service
-    let client = OpenRGB::connect_to(("localhost", 6742)).await?;
-    client.set_name("my client").await?;
+    // and wait for it to be running
+    let client = Retry::spawn(FixedInterval::from_millis(1000), || {
+        println!("connecting to openrgb");
+        OpenRGB::connect_to(("localhost", 6742))
+    })
+    .await?;
+
+    // test the connection
+    client.set_name("orgb pp7 connection").await?;
     println!("OpenRGB protocol {}", client.get_protocol_version());
 
     // loop over available controllers
@@ -67,21 +77,28 @@ async fn keyboard_ctl_task(
     cid: u32,
     setting: &Config,
 ) -> Result<(), Box<dyn Error>> {
+    // parse settings for this task
     let pp7api_base_url = format!(
         "http://{host}:{port}",
-        host = setting.get_string("Host")?,
-        port = setting.get_int("Port")?
+        host = setting
+            .get_string("Host")
+            .unwrap_or("localhost".to_string()),
+        port = setting.get_int("Port").unwrap_or(50001),
     );
-    let pp7api_client = RestClient::new(&pp7api_base_url).unwrap();
     let led_color_enable = setting.get_bool("LedColors").unwrap_or(false);
     let led_on = setting.get_int("LedOn").unwrap_or(255);
     let led_dim = setting.get_int("LedDim").unwrap_or(5);
     let delay_interval_ms = 1000 / setting.get_int("UpdateFrequency").unwrap_or(100);
 
-    let groups = pp7api_client
-        .get::<_, pp7::GlobalGroupList>(())
-        .await?
-        .into_inner();
+    // create PP7 api connection
+    let pp7api_client = RestClient::new(&pp7api_base_url).unwrap();
+    // here the first request is made, so we wait for PP to be started
+    let groups = Retry::spawn(FixedInterval::from_millis(1000), || {
+        println!("requesting config from proPresenter");
+        pp7api_client.get::<_, pp7::GlobalGroupList>(())
+    })
+    .await?
+    .into_inner();
     println!("{:?}", groups);
 
     // read keybindings file (map GroupName -> Key(char) )
@@ -117,13 +134,11 @@ async fn keyboard_ctl_task(
                     .map(|led_data| led_data.name.replace("Key: ", ""))
                     .enumerate()
                     .map(|(i, key_name)| {
-                        // Find if an Key on the Keyboard is used by an active Group
+                        // Find if a Key on the Keyboard is used by an active Group
                         // Find by KeyName or by LED Index
                         let matches: Vec<&pp7::PP7KeyBind> = keys
                             .iter()
-                            .filter(|group_bind| {
-                                group_bind.key == key_name || group_bind.num == i
-                            })
+                            .filter(|group_bind| group_bind.key == key_name || group_bind.num == i)
                             .collect();
 
                         if !matches.is_empty() {
@@ -157,6 +172,7 @@ async fn keyboard_ctl_task(
                 orgb.update_leds(cid, colors).await?;
             }
         }
+
         //TODO : use interval for constant updates
         //https://stackoverflow.com/questions/66863385/how-can-i-use-tokio-to-trigger-a-function-every-period-or-interval-in-seconds
         time::sleep(Duration::from_millis(delay_interval_ms as u64)).await;
